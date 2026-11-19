@@ -157,10 +157,28 @@ impl Vault {
     }
 
     /// Whether listings show an entry of this name in the notebook root.
+    /// Letter case is ignored, as it is when `today` is recognised: on a
+    /// case-sensitive file system an entry named `Today` takes that name too.
     fn shown_in_root(&self, name: &str) -> bool {
-        !name.eq_ignore_ascii_case(DAILY_DIR)
-            && fs::symlink_metadata(self.root.join(name))
+        let shown = |name: &str| {
+            fs::symlink_metadata(self.root.join(name))
                 .is_ok_and(|meta| (meta.is_dir() || meta.is_file()) && !is_ignored(name, &meta))
+        };
+        if name.eq_ignore_ascii_case(DAILY_DIR) {
+            return false;
+        }
+        if shown(name) {
+            return true;
+        }
+        // Only a name with letters can be written in another case.
+        name.bytes().any(|b| b.is_ascii_alphabetic())
+            && fs::read_dir(&self.root).is_ok_and(|entries| {
+                entries.flatten().any(|entry| {
+                    entry.file_name().to_str().is_some_and(|other| {
+                        other != name && other.eq_ignore_ascii_case(name) && shown(other)
+                    })
+                })
+            })
     }
 
     /// The error for a name that is both an entry in the notebook root and

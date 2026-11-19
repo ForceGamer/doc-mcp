@@ -16,7 +16,9 @@ use vault::Vault;
 const USAGE: &str = "Usage: doc-mcp <NOTES_DIR>
 
 Serves the notes in NOTES_DIR to an MCP client over stdio.
-NOTES_DIR can also be given in the NOTES_DIR environment variable.";
+NOTES_DIR can also be given in the NOTES_DIR environment variable, or as
+NOTES_DIR=<path> in a .env file in the working directory or one of its parents.
+The argument wins over the environment, and the environment over .env.";
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -24,6 +26,14 @@ async fn main() -> ExitCode {
     if arg.as_ref().is_some_and(|a| a == "--help" || a == "-h") {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
+    }
+    // Fill in variables from a .env file, if there is one. Variables already
+    // set in the environment are left as they are.
+    if let Err(e) = dotenvy::dotenv()
+        && !e.not_found()
+    {
+        eprintln!("doc-mcp: could not read .env: {e}");
+        return ExitCode::FAILURE;
     }
     let Some(root) = arg
         .or_else(|| std::env::var_os("NOTES_DIR"))

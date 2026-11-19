@@ -95,3 +95,45 @@ fn serves_the_three_tools_over_stdio() {
     drop(stdin);
     assert!(server.wait().unwrap().success());
 }
+
+/// Start the server with no argument in `cwd` and return what it printed to
+/// stderr once stdin is closed.
+fn startup_message(cwd: &Path, notes_dir_env: Option<&Path>) -> String {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_doc-mcp"));
+    command
+        .current_dir(cwd)
+        .env_remove("NOTES_DIR")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    if let Some(dir) = notes_dir_env {
+        command.env("NOTES_DIR", dir);
+    }
+    let output = command.output().unwrap();
+    String::from_utf8(output.stderr).unwrap()
+}
+
+#[test]
+fn reads_the_notes_dir_from_a_dotenv_file() {
+    let notes = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    fs::write(
+        cwd.path().join(".env"),
+        format!("# notes\nNOTES_DIR=\"{}\"\n", notes.path().display()),
+    )
+    .unwrap();
+
+    let message = startup_message(cwd.path(), None);
+    assert!(
+        message.contains(&format!("serving {}", notes.path().display())),
+        "{message}"
+    );
+
+    // A variable already in the environment wins over .env.
+    let message = startup_message(cwd.path(), Some(other.path()));
+    assert!(
+        message.contains(&format!("serving {}", other.path().display())),
+        "{message}"
+    );
+}
